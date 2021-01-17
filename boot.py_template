@@ -1,0 +1,63 @@
+HOST_NAME='$host_name'
+WLAN_SSID='$wlan_ssid'
+WLAN_PWD='$wlan_pwd'
+
+import network
+from machine import Pin, PWM
+from time import sleep
+import socket
+import re
+
+PIN = 14
+
+pwm = None
+
+def blink(duty=0.2):
+    duty_int = min(max(0, round(duty * 1024)), 1024)
+    pwm.duty(duty_int)
+    sleep(0.05)
+    pwm.duty(0)
+    sleep(0.2)
+
+
+def main():
+    # pins
+    global pwm
+    pwm = PWM(Pin(PIN), freq=1000, duty=0)
+    # network
+    sta_if = network.WLAN(network.STA_IF)
+    ap_if = network.WLAN(network.AP_IF)
+    sta_if.active(True)
+    ap_if.active(False)
+    sta_if.config(dhcp_hostname=HOST_NAME)
+    sta_if.connect(WLAN_SSID, WLAN_PWD)
+    while not sta_if.isconnected():
+        blink()
+        sleep(1)
+        pass
+    # server
+    addr = socket.getaddrinfo('0.0.0.0', 80)[0][-1]
+    s = socket.socket()
+    s.bind(addr)
+    s.listen(1)
+    blink()
+    blink()
+    while True:
+        cl, addr = s.accept()
+        # connected
+        cl_file = cl.makefile('rwb', 0)
+        while True:
+            cmd = cl_file.readline().decode().lower().strip()
+            if cmd == '':
+                break
+            if cmd == 'b':
+                blink()
+            res = re.match(r'b(\d(?:\.\d+)?)', cmd)
+            if res:
+                blink(float(res.group(1)))
+            if cmd == '?':
+                cl.send('OK\r\n'.encode())
+        # disconnected
+        cl.close()
+
+main()
